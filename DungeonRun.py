@@ -90,8 +90,9 @@ def run():
         print("Using software rendering")
         factory = sdl2.ext.SpriteFactory(sdl2.ext.SOFTWARE)
 
-    #p1_sprite = factory.from_image(RESOURCES.get_path("monster.png"))  #TODO debug image issue
-    p1_sprite = factory.from_color(WHITE, size=(20, 100))
+    #p1_sprite = factory.from_image(RESOURCES.get_path("monster.png"))
+    p1_sprite = factory.from_image(RESOURCES.get_path("playerv1.png"))
+    #p1_sprite = factory.from_color(WHITE, size=(20, 100))
     #sp_paddle2 = factory.from_color(WHITE, size=(20, 100))
     #sp_ball = factory.from_color(WHITE, size=(20, 20))
 
