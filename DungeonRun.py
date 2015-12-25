@@ -14,6 +14,29 @@ MONSTER_DEFAULT_SPEED = 5
 RESOURCES = sdl2.ext.Resources(__file__, "resources")
 DOORS = sdl2.ext.Resources(__file__, "resources/doors")
 
+
+class SoftwareRenderSystem(sdl2.ext.SoftwareSpriteRenderSystem):
+    def __init__(self, window):
+        super(SoftwareRenderSystem, self).__init__(window)
+
+    def render(self, components):
+        sdl2.ext.fill(self.surface, BLACK)
+        super(SoftwareRenderSystem, self).render(components)
+
+
+class TextureRenderSystem(sdl2.ext.TextureSpriteRenderSystem):
+    def __init__(self, renderer):
+        super(TextureRenderSystem, self).__init__(renderer)
+        self.renderer = renderer
+
+    def render(self, components):
+        tmp = self.renderer.color
+        self.renderer.color = BLACK
+        self.renderer.clear()
+        self.renderer.color = tmp
+        super(TextureRenderSystem, self).render(components)
+
+
 class Timer(object):
     def __init__(self):
         super(Timer, self).__init__()
@@ -24,6 +47,30 @@ class Timer(object):
 
     def get_time(self):
         return time.time() - self.start_time()
+
+
+class Borders(object):
+    def __init__(self, minx, miny, maxx, maxy):
+        super(Borders, self).__init__()
+        self.minx = minx
+        self.miny = miny
+        self.maxx = maxx
+        self.maxy = maxy
+
+
+class Move(object):
+    def __init__(self, moveKeys):
+        super(Move, self).__init__()
+        self.up = moveKeys[0]
+        self.right = moveKeys[1]
+        self.down = moveKeys[2]
+        self.left = moveKeys[3]
+
+    def __iter__(self):
+        moves = (self.up,self.right,self.down,self.left)
+        for move in moves:
+            yield move
+
 
 class MovementSystem(sdl2.ext.Applicator):
     def __init__(self, borders):
@@ -126,39 +173,12 @@ class Door(sdl2.ext.Entity):
         self.sprite.position = position
 
 
-class SoftwareRenderSystem(sdl2.ext.SoftwareSpriteRenderSystem):
-    def __init__(self, window):
-        super(SoftwareRenderSystem, self).__init__(window)
-
-    def render(self, components):
-        sdl2.ext.fill(self.surface, BLACK)
-        super(SoftwareRenderSystem, self).render(components)
-
-
-class TextureRenderSystem(sdl2.ext.TextureSpriteRenderSystem):
-    def __init__(self, renderer):
-        super(TextureRenderSystem, self).__init__(renderer)
-        self.renderer = renderer
-
-    def render(self, components):
-        tmp = self.renderer.color
-        self.renderer.color = BLACK
-        self.renderer.clear()
-        self.renderer.color = tmp
-        super(TextureRenderSystem, self).render(components)
-
-
 class Velocity(object):
     def __init__(self):
         super(Velocity, self).__init__()
         self.vx = 0
         self.vy = 0
 
-class PlayerData(object):
-    def __init__(self):
-        super(PlayerData, self).__init__()
-        self.ai = False
-        self.points = 0
 
 class Player(sdl2.ext.Entity):
     def __init__(self, world, sprite, moveKeys, posx=0, posy=0, ai=False):
@@ -168,6 +188,14 @@ class Player(sdl2.ext.Entity):
         self.playerdata = PlayerData()
         self.playerdata.ai = ai
         self.move = Move(moveKeys)
+
+
+class PlayerData(object):
+    def __init__(self):
+        super(PlayerData, self).__init__()
+        self.ai = False
+        self.points = 0
+
 
 class MonsterAI(sdl2.ext.Applicator):
     def __init__(self):
@@ -193,7 +221,7 @@ class MonsterAI(sdl2.ext.Applicator):
                     if caught:
                         print('caught')
                         monster.velocity.vx, monster.velocity.vy = 0,0
-                        #world.delete(p)        #todo kill player
+                        #world.delete(p)        #TODO kill player
                     else:
                         dist = sqrt(abs(sprite.x-monster.sprite.x)**2+abs(sprite.y-monster.sprite.y)**2)
                         if dist < closest_dist:
@@ -229,31 +257,12 @@ class Monster(sdl2.ext.Entity):
         else:
             self.velocity.vy = 0
 
+
 class MonsterData(object):
     def __init__(self, top_speed=MONSTER_DEFAULT_SPEED, sight_range=300):
         self.top_speed = top_speed
         self.sight_range = sight_range
 
-class Borders(object):
-    def __init__(self, minx, miny, maxx, maxy):
-        super(Borders, self).__init__()
-        self.minx = minx
-        self.miny = miny
-        self.maxx = maxx
-        self.maxy = maxy
-
-
-class Coin(sdl2.ext.Entity):
-    def __init__(self, world, sprite, borders):
-        self.sprite = sprite
-        self.borders = borders
-        self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
-        self.sprite.y = random.randrange(borders.miny,borders.maxy-self.sprite.size[1])
-
-    def relocate(self):
-        borders = self.borders
-        self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
-        self.sprite.y = random.randrange(borders.miny,borders.maxy-self.sprite.size[1])
 
 class CoinSystem(sdl2.ext.Applicator):
     def __init__(self):
@@ -280,29 +289,27 @@ class CoinSystem(sdl2.ext.Applicator):
         return picked_up
 
     def process(self,world, componentsets):
-        #TODO coin collision, points
         for comp in componentsets:
             pass
         for coin in self.coins:
             for player in self.players:
                 if self._pick_up(player.sprite, coin.sprite):
-                    #world.delete(coin)
+                    #world.delete(coin)     # TODO coin deletion
                     player.playerdata.points += 5
                     return
 
 
-class Move(object):
-    def __init__(self, moveKeys):
-        super(Move, self).__init__()
-        self.up = moveKeys[0]
-        self.right = moveKeys[1]
-        self.down = moveKeys[2]
-        self.left = moveKeys[3]
+class Coin(sdl2.ext.Entity):
+    def __init__(self, world, sprite, borders):
+        self.sprite = sprite
+        self.borders = borders
+        self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
+        self.sprite.y = random.randrange(borders.miny,borders.maxy-self.sprite.size[1])
 
-    def __iter__(self):
-        moves = (self.up,self.right,self.down,self.left)
-        for move in moves:
-            yield move
+    def relocate(self):
+        borders = self.borders
+        self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
+        self.sprite.y = random.randrange(borders.miny,borders.maxy-self.sprite.size[1])
 
 
 def run():
@@ -328,8 +335,7 @@ def run():
     p1_sprite = factory.from_image(RESOURCES.get_path("player1.png"))
     p2_sprite = factory.from_image(RESOURCES.get_path("player2.png"))
     monster_sprite = factory.from_image(RESOURCES.get_path("monster.png"))
-    door_sprite = factory.from_image(DOORS.get_path("door-generic.png"))    # TODO randomize door image selection
-                                                                            # from this DOORS resource folder
+    door_sprite = factory.from_image(DOORS.get_path("door-generic.png"))
 
     world = sdl2.ext.World()
 
@@ -337,16 +343,13 @@ def run():
     door_sys = DoorSystem(borders)
     monster_ai = MonsterAI()
     coin_sys = CoinSystem()
-    #collision = CollisionSystem(minx, miny, maxx, maxy)
-    #aicontroller = TrackingAIController(0, 600)
+
     if factory.sprite_type == sdl2.ext.SOFTWARE:
         spriterenderer = SoftwareRenderSystem(window)
     else:
         spriterenderer = TextureRenderSystem(renderer)
 
-    #world.add_system(aicontroller)
     world.add_system(movement)
-    #world.add_system(collision)
     world.add_system(spriterenderer)
     world.add_system(door_sys)
     world.add_system(monster_ai)
@@ -365,6 +368,7 @@ def run():
     for count in range(15):
         coin = Coin(world, factory.from_image(coin_image), borders)
         coins.append(coin)
+
     coin_sys.borders = borders
     coin_sys.world = world
     coin_sys.coin_image = coin_image
