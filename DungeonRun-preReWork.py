@@ -102,9 +102,10 @@ class MovementSystem(sdl2.ext.Applicator):
 class DoorSystem(sdl2.ext.Applicator):
     def __init__(self, borders):
         super(DoorSystem, self).__init__()
-        self.componenttypes = (sdl2.ext.Sprite,PlayerData,)
+        self.componenttypes = (sdl2.ext.Sprite,PlayerData)
         self.players = None
         self.door = None
+        self.coins = None
         self.borders = borders
         self.door_sprites = None
         self.monster = None
@@ -132,6 +133,9 @@ class DoorSystem(sdl2.ext.Applicator):
                 door.sprite.x,door.sprite.y = new_x, new_y
                 break
 
+    def relocate_coins(self):
+        self.coin_sys.new_batch()
+
     def relocate_monster(self):
         monster = self.monster
         players = self.players
@@ -157,8 +161,7 @@ class DoorSystem(sdl2.ext.Applicator):
         if len(playerdata_players_entered) > 0:
             # move door
             self.relocate_door()
-            # Takes all CCoin Entities and replaces/relocates them
-            self.coin_sys.new_batch()
+            self.relocate_coins()
             self.relocate_monster()
             for pd in playerdata_players_entered:
                 pd.points += 5
@@ -206,6 +209,7 @@ class MonsterAI(sdl2.ext.Applicator):
 
         left, top, right, bottom = monster.sprite.area
 
+
         for sprite, vel in componentsets:
             closest_player_sprite = None
             closest_dist = 99999
@@ -215,7 +219,7 @@ class MonsterAI(sdl2.ext.Applicator):
                     caught = (left < p_right and right > p_left and top < p_bottom and bottom > p_top)
 
                     if caught:
-                        #print('caught') # TODO (print check) remove once kill mechanism complete
+                        print('caught')
                         monster.velocity.vx, monster.velocity.vy = 0,0
                         #world.delete(p)        #TODO kill player
                     else:
@@ -263,54 +267,41 @@ class MonsterData(object):
 class CoinSystem(sdl2.ext.Applicator):
     def __init__(self, max_coins):
         super(CoinSystem, self).__init__()
-        self.componenttypes = (CCoin,)
+        self.componenttypes = (sdl2.ext.Sprite,)
+        self.coins = None
         self.players = None
         self.borders = None
         self.world = None
         self.max_coins = int(max_coins)
-        self.ccoins = None
-        self.factory = None
-
-    def _pick_up(self, player, coin):
-        p_left, p_top, p_right, p_bottom = player.sprite.area
-        c_left, c_top, c_right, c_bottom =  coin.sprite.area
-        picked_up = (c_left < p_right and c_right > p_left
-                 and c_top < p_bottom and c_bottom > p_top)
-        if picked_up:
-            self.world.delete(coin.entity)
-            self.world.delete(coin)
-            player.playerdata.points += 5
-        return picked_up
 
     def new_batch(self):
-        max_coins = self.max_coins
-        ccoins = self.ccoins
-        for coin in ccoins:
+        for coin in self.coins:
             coin.relocate()
 
-        num_coins = len(ccoins)
-        if num_coins < max_coins:
-            for count in range(max_coins - num_coins):
-                ECoin(self.world,self.factory.from_image(self.coin_image),self.borders)
+        if len(self.coins) < self.max_coins:
+            for count in range(self.max_coins-len(self.coins)):
+                self.coins.append(Coin(self.world,self.coin_image,self.borders))
+
+    def _pick_up(self, p_sprite, c_sprite):
+        p_left, p_top, p_right, p_bottom = p_sprite.area
+        c_left, c_top, c_right, c_bottom =  c_sprite.area
+        picked_up = (c_left < p_right and c_right > p_left
+                 and c_top < p_bottom and c_bottom > p_top)
+        return picked_up
 
     def process(self,world, componentsets):
-        self.ccoins = [comp[0] for comp in componentsets]
-        for coin in self.ccoins:
+        for comp in componentsets:
+            pass
+        for coin in self.coins:
             for player in self.players:
-                if self._pick_up(player, coin):
-                    break
+                if self._pick_up(player.sprite, coin.sprite):
+                    #world.delete(coin)     # TODO coin deletion
+                    player.playerdata.points += 5
+                    return
 
 
-class ECoin(sdl2.ext.Entity):
+class Coin(sdl2.ext.Entity):
     def __init__(self, world, sprite, borders):
-        super(ECoin, self).__init__()
-        self.ccoin = CCoin(world, self, sprite, borders)
-
-
-class CCoin(sdl2.ext.Entity):
-    def __init__(self, world, entity, sprite, borders):
-        super(CCoin, self).__init__()
-        self.entity = entity
         self.sprite = sprite
         self.borders = borders
         self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
@@ -321,9 +312,10 @@ class CCoin(sdl2.ext.Entity):
         self.sprite.x = random.randrange(borders.minx,borders.maxx-self.sprite.size[0])
         self.sprite.y = random.randrange(borders.miny,borders.maxy-self.sprite.size[1])
 
+
 def run():
     sdl2.ext.init()
-    borders = Borders(0,0,1200,800)
+    borders = Borders(0,0,1700,900)
     window = sdl2.ext.Window("DUNGEON RUN", size=(borders.maxx,borders.maxy))
     window.show()
 
@@ -372,19 +364,22 @@ def run():
 
     timer = Timer()
 
+    coins = []
     coin_image = RESOURCES.get_path("coin.png")
     for count in range(coin_sys.max_coins):
-        coin = ECoin(world, factory.from_image(coin_image), borders)
+        coin = Coin(world, factory.from_image(coin_image), borders)
+        coins.append(coin)
 
     coin_sys.borders = borders
     coin_sys.world = world
     coin_sys.coin_image = coin_image
+    coin_sys.coins = coins
     coin_sys.players = players
-    coin_sys.factory = factory
 
     door_sys.players = players
     door_sys.monster = monster
     door_sys.door = door
+    door_sys.coins = coins
     door_sys.coin_sys = coin_sys
     door_sys.door_sprites = door_sprites
 
