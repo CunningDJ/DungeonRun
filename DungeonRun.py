@@ -9,8 +9,6 @@ import os
 
 BLACK = sdl2.ext.Color(0, 0, 0)
 WHITE = sdl2.ext.Color(255, 255, 255)
-PLAYER_DEFAULT_SPEED = 8
-MONSTER_DEFAULT_SPEED = 5
 RESOURCES = sdl2.ext.Resources(__file__, "resources")
 DOORS = sdl2.ext.Resources(__file__, "resources/doors")
 
@@ -36,6 +34,9 @@ class TextureRenderSystem(sdl2.ext.TextureSpriteRenderSystem):
         super(TextureRenderSystem, self).render(components)
 
 
+# Timer: Class containing information on the start time of the game and, at command giving the relative time since then.
+# Can be used by entities and otherwise to keep track of things that may take certain amounts of time to activate or
+# deactivate
 class Timer(object):
     def __init__(self):
         super(Timer, self).__init__()
@@ -48,6 +49,7 @@ class Timer(object):
         return time.time() - self.start_time
 
 
+# Borders: Class containing the border information of the world and each entity, definiing where they can and can't go
 class Borders(object):
     def __init__(self, minx, miny, maxx, maxy):
         super(Borders, self).__init__()
@@ -57,20 +59,8 @@ class Borders(object):
         self.maxy = maxy
 
 
-class Move(object):
-    def __init__(self, move_keys):
-        super(Move, self).__init__()
-        self.up = move_keys[0]
-        self.right = move_keys[1]
-        self.down = move_keys[2]
-        self.left = move_keys[3]
-
-    def __iter__(self):
-        moves = (self.up, self.right, self.down, self.left)
-        for move in moves:
-            yield move
-
-
+# MovementSystem: System that draws on the current Velocity component information of each player and monster and moves
+# the appropriate unit distance accordingly
 class MovementSystem(sdl2.ext.Applicator):
     def __init__(self, borders):
         super(MovementSystem, self).__init__()
@@ -98,6 +88,9 @@ class MovementSystem(sdl2.ext.Applicator):
                 sprite.y = self.maxy - sheight
 
 
+# DoorSystem: System for determining when players have "entered" a door, and what happens to the world when this occurs.
+# Namely, the coins are all moved and regenerated (calling on the attached CoinSystem), the door is moved, and the
+# monster is moved
 class DoorSystem(sdl2.ext.Applicator):
     def __init__(self, borders):
         super(DoorSystem, self).__init__()
@@ -165,12 +158,14 @@ class DoorSystem(sdl2.ext.Applicator):
                 pd.points += 5
 
 
+# Door: Entity representing the door.
 class Door(sdl2.ext.Entity):
     def __init__(self, world, sprite, position):
         self.sprite = sprite
         self.sprite.position = position
 
 
+# Velocity: contains the current velocities of the Player and Monster Entities
 class Velocity(object):
     def __init__(self):
         super(Velocity, self).__init__()
@@ -178,14 +173,18 @@ class Velocity(object):
         self.vy = 0
 
 
+# EPlayer: One of a dual Player Entity system.  This one acts as the Entity for the component CPlayer, allowing the
+# overall Player Entity system to be deleted by the World.delete() function
 class EPlayer(sdl2.ext.Entity):
-    def __init__(self, world, sprite, player_num, move_keys, posx=0, posy=0, ai=False):
+    def __init__(self, world, sprite, player_num, move_keys, posx=0, posy=0, speed=8, ai=False):
         super(EPlayer, self).__init__()
-        self.cplayer = CPlayer(world, self, sprite, player_num, move_keys, posx, posy, ai)
+        self.cplayer = CPlayer(world, self, sprite, player_num, move_keys, posx, posy, speed, ai)
 
 
+# CPlayer: One of a dual Player Entity system.  This one acts as a component for the EPlayer Entity, allowing it to be
+# called on and managed by the Systems and Applicators
 class CPlayer(sdl2.ext.Entity):
-    def __init__(self, world, entity, sprite, player_num, move_keys, posx, posy, ai):
+    def __init__(self, world, entity, sprite, player_num, move_keys, posx, posy, speed, ai):
         super(CPlayer, self).__init__()
         self.entity = entity
         self.sprite = sprite
@@ -193,19 +192,20 @@ class CPlayer(sdl2.ext.Entity):
         self.velocity = Velocity()
         self.playerdata = PlayerData(player_num)
         self.playerdata.ai = ai
+        self.playerdata.speed = speed
         self.move = Move(move_keys)
 
     def process_event(self, event):
         if event.type == sdl2.SDL_KEYDOWN:
             if event.key.keysym.sym in self.move:
                 if event.key.keysym.sym == self.move.up:
-                    self.velocity.vy = PLAYER_DEFAULT_SPEED
+                    self.velocity.vy = self.playerdata.speed
                 elif event.key.keysym.sym == self.move.down:
-                    self.velocity.vy = -PLAYER_DEFAULT_SPEED
+                    self.velocity.vy = -self.playerdata.speed
                 elif event.key.keysym.sym == self.move.right:
-                    self.velocity.vx = PLAYER_DEFAULT_SPEED
+                    self.velocity.vx = self.playerdata.speed
                 elif event.key.keysym.sym == self.move.left:
-                    self.velocity.vx = -PLAYER_DEFAULT_SPEED
+                    self.velocity.vx = -self.playerdata.speed
         elif event.type == sdl2.SDL_KEYUP:
             if event.key.keysym.sym in (self.move.up, self.move.down):
                 self.velocity.vy = 0
@@ -214,14 +214,34 @@ class CPlayer(sdl2.ext.Entity):
         return
 
 
+# Move: Class containing key mappings for Player Entity controls
+class Move(object):
+    def __init__(self, move_keys):
+        super(Move, self).__init__()
+        self.up = move_keys[0]
+        self.right = move_keys[1]
+        self.down = move_keys[2]
+        self.left = move_keys[3]
+
+    def __iter__(self):
+        moves = (self.up, self.right, self.down, self.left)
+        for move in moves:
+            yield move
+
+
+# PlayerData container class for each Player Entity's basic information, such as ai switch, points earned, player ID
+# number, and player speed
 class PlayerData(object):
     def __init__(self, player_num):
         super(PlayerData, self).__init__()
         self.ai = False
         self.points = 0
         self.player_num = player_num
+        self.speed = 0
 
 
+# MonsterAI: System governing monster behavior in the world context.  Execution of different monster behaviors dictated
+#  by this system (e.g. patrol and advance) are detailed in the monster class functions.
 class MonsterAI(sdl2.ext.Applicator):
     def __init__(self):
         super(MonsterAI, self).__init__()
@@ -231,6 +251,7 @@ class MonsterAI(sdl2.ext.Applicator):
         self.window = None
         # List of tuples with the player number and final score for each dead player
         self.playerFinalScores = []
+        self.timer = None
 
     def remove_dead_players(self, world, dead_players):
 
@@ -238,7 +259,7 @@ class MonsterAI(sdl2.ext.Applicator):
             player_num = player.playerdata.player_num
             player_final_score = player.playerdata.points
             self.playerFinalScores.append((player_num, player_final_score))
-            print('Player {} Dead.  Points: {}'.format(player_num, player_final_score))
+            print('Player {} Dead.  Points: {} Time: {}'.format(player_num, player_final_score, int(self.timer.get_time())))
             world.delete(player.entity)
             world.delete(player)
             self.players.remove(player)
@@ -284,16 +305,20 @@ class MonsterAI(sdl2.ext.Applicator):
             self.remove_dead_players(world, dead_players)
 
 
+# Monster Entity class.  Contains behavior (in the functions) and trait (in the sub-class MonsterData) information for
+#  each monster, including their patrol and advance algorithms, their velocity and sight range data,
+#  and their border limitations
 class Monster(sdl2.ext.Entity):
-    def __init__(self, world, sprite, borders, posx=0, posy=0):
+    def __init__(self, world, sprite, borders, posx=0, posy=0, top_speed=5, sight_range=300):
         self.sprite = sprite
         self.sprite.position = posx, posy
         self.velocity = Velocity()
         self.velocity.vx = 0
         self.velocity.vy = 0
-        self.monsterdata = MonsterData()
+        self.monsterdata = MonsterData(top_speed=top_speed, sight_range=sight_range)
         self.borders = borders
 
+    # advance dictates how the Monster behaves given a player he has decided to attack.
     def advance(self, player_sprite):
         player_sprite = player_sprite
         if player_sprite.x < self.sprite.x:
@@ -310,6 +335,7 @@ class Monster(sdl2.ext.Entity):
         else:
             self.velocity.vy = 0
 
+    # patrol dictates how the Monster behaves when he has decided to patrol around the world
     def patrol(self):
         borders = self.borders
 
@@ -318,36 +344,45 @@ class Monster(sdl2.ext.Entity):
         dist_right = abs(self.sprite.x - borders.maxx)
         dist_left = abs(self.sprite.x - borders.minx)
 
-        min_wall_dist = int(0.5*self.monsterdata.sight_range)
+        min_wall_dist = int(0.7*self.monsterdata.sight_range)
         top_speed = self.monsterdata.top_speed
         velocity = self.velocity
 
+        # return_to_patrol_speed is a slower speed for returning from outside the border of the patrol,
+        # to stop the monster from bouncing back and forth over the patrol line from too large a correction
+        # velocity
+        if (int(0.5*top_speed)) > 5:
+            return_to_patrol_speed = 5
+        else:
+            return_to_patrol_speed = int(0.5*top_speed)
+
+        # This essentially tells the monsters to resume and patrol around an inner rectangle of the world, counter-clockwise
         if dist_bottom <= dist_top:
             if dist_bottom == min_wall_dist:
                 if dist_right == min_wall_dist:
                     velocity.vy = top_speed
                     velocity.vx = 0
                 elif dist_right < min_wall_dist:
-                    velocity.vx = -int(0.5*top_speed)
+                    velocity.vx = -return_to_patrol_speed
                     velocity.vy = top_speed
                 elif dist_left <= min_wall_dist:
                     velocity.vx = top_speed
                     velocity.vy = 0
             elif dist_bottom < min_wall_dist:
-                velocity.vy = int(0.5*top_speed)
+                velocity.vy = return_to_patrol_speed
                 if dist_right < min_wall_dist:
                     velocity.vx = -top_speed
                 else:
                     velocity.vx = top_speed
             else:
                 if dist_left < min_wall_dist:
-                    velocity.vx = int(0.5*top_speed)
+                    velocity.vx = return_to_patrol_speed
                     velocity.vy = -top_speed
                 elif dist_left == min_wall_dist:
                     velocity.vx = 0
                     velocity.vy = -top_speed
                 elif dist_right < min_wall_dist:
-                    velocity.vx = -int(0.5*top_speed)
+                    velocity.vx = -return_to_patrol_speed
                     velocity.vy = top_speed
                 elif dist_right == min_wall_dist:
                     velocity.vx = 0
@@ -364,23 +399,23 @@ class Monster(sdl2.ext.Entity):
                     velocity.vx = 0
                     velocity.vy = -top_speed
                 else:
-                    velocity.vx = int(0.5*top_speed)
+                    velocity.vx = return_to_patrol_speed
                     velocity.vy = -top_speed
             elif dist_top < min_wall_dist:
-                velocity.vy = -int(0.5*top_speed)
+                velocity.vy = -return_to_patrol_speed
                 if dist_left < min_wall_dist:
                     velocity.vx = top_speed
                 else:
                     velocity.vx = -top_speed
             else:
                 if dist_left < min_wall_dist:
-                    velocity.vx = int(0.5*top_speed)
+                    velocity.vx = return_to_patrol_speed
                     velocity.vy = -top_speed
                 elif dist_left == min_wall_dist:
                     velocity.vx = 0
                     velocity.vy = -top_speed
                 elif dist_right < min_wall_dist:
-                    velocity.vx = -int(0.5*top_speed)
+                    velocity.vx = -return_to_patrol_speed
                     velocity.vy = top_speed
                 elif dist_right == min_wall_dist:
                     velocity.vx = 0
@@ -390,12 +425,15 @@ class Monster(sdl2.ext.Entity):
                     velocity.vy = top_speed
 
 
+# MonsterData: Class containing basic information about the Monster Entity it is linked to.
 class MonsterData(object):
-    def __init__(self, top_speed=MONSTER_DEFAULT_SPEED, sight_range=300):
+    def __init__(self, top_speed, sight_range):
         self.top_speed = top_speed
         self.sight_range = sight_range
 
 
+# CoinSystem: System checking if a player has 'picked up' any coins, removing coins and awarding points to that player
+# if this has occurred and moving and regenerating coins if the door is activated
 class CoinSystem(sdl2.ext.Applicator):
     def __init__(self, max_coins):
         super(CoinSystem, self).__init__()
@@ -437,12 +475,16 @@ class CoinSystem(sdl2.ext.Applicator):
                     break
 
 
+# ECoin: Half of the dual Coin Entity system.  The entity for the component CCoin, ECoin allows the player to delete the
+# Coin Entity system using the World.delete() function on it.
 class ECoin(sdl2.ext.Entity):
     def __init__(self, world, sprite, borders):
         super(ECoin, self).__init__()
         self.ccoin = CCoin(world, self, sprite, borders)
 
 
+# CCoin: Half of the dual Coin Entity system.  The component for the entity ECoin, CCoin allows the player to manage
+# the Coin as a component by the Systems and Applicators.
 class CCoin(sdl2.ext.Entity):
     def __init__(self, world, entity, sprite, borders):
         super(CCoin, self).__init__()
@@ -546,6 +588,12 @@ def run():
     monster_ai.monster = monster
     monster_ai.players = players
     monster_ai.window = window
+    monster_ai.timer = timer
+
+    # Switches for accelerator and decelator key events (+ and - on keypad, respectively)
+    # Keeps the player from holding down the keys, must dial it up or down, one click at a time
+    accelerator_key_switch = True
+    decelerator_key_switch = True
 
     running = True
     timer.start()
@@ -554,21 +602,43 @@ def run():
             if event.type == sdl2.SDL_QUIT:
                 running = False
                 break
+
             # Player movement processing
             if event.type == sdl2.SDL_KEYDOWN or event.type == sdl2.SDL_KEYUP:
                 for player in players:
                     player.process_event(event)
 
+            # Processing accelerator and decelerator events (+ and - on the keypad)
+            if event.type == sdl2.SDL_KEYDOWN:
+                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS and accelerator_key_switch:
+                    accelerator_key_switch = False
+                    temp_speed = 0
+                    for player in players:
+                        player.playerdata.speed += 1
+                        temp_speed = player.playerdata.speed
+                    monster.monsterdata.top_speed = int(round(5*temp_speed/8))
+                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS and decelerator_key_switch:
+                    decelerator_key_switch = False
+                    min_player_speed = 3
+                    temp_speed = min_player_speed
+                    for player in players:
+                        if player.playerdata.speed > min_player_speed:
+                            player.playerdata.speed -= 1
+                            temp_speed = player.playerdata.speed
+                    if monster.monsterdata.top_speed > 1:
+                        monster.monsterdata.top_speed = int(round(5*temp_speed/8))
+            elif  event.type == sdl2.SDL_KEYUP:
+                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS:
+                    accelerator_key_switch = True
+                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS:
+                    decelerator_key_switch = True
+
         sdl2.SDL_Delay(10)
 
-        if len(players) == 2:
-            win_title = 'DUNGEON RUN | P1: {} P2: {}'.format(player1.playerdata.points, player2.playerdata.points)
-        elif len(players) == 1:
-            if two_player:
-                if players[0] == player2:
-                    win_title = 'DUNGEON RUN | P2: {}'.format(player2.playerdata.points)
-                elif players[0] == player1:
-                    win_title = 'DUNGEON RUN | P1: {}'.format(player1.playerdata.points)
+        int_time = int(timer.get_time())
+        win_title = 'DUNGEON RUN {} '.format(int_time)
+        for player in players:
+            win_title += 'P{}: {} '.format(player.playerdata.player_num, player.playerdata.points)
         window.title = win_title
         world.process()
 
