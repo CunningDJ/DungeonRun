@@ -20,6 +20,7 @@ In its current version, you must install the Python and the PySDL2 library (link
 
 - Two players are default right now.
 - Arrow keys move Player 1, WASD moves player two (same arrangement as the arrow keys).
+- Run to the door to progress to the next level.
 - + (plus) and - (minus) on the keypad will accelerate and decelerate (respectively) the players and monsters.
 - The points and end game score can currently be seen in the window header.
 - The most recent code is in the top-level DungeonRun.py script, but stable versions with less features are in the version_release folders.
