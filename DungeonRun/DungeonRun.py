@@ -1,6 +1,5 @@
-from os import path, environ, listdir, chdir
+from os import path, environ, listdir
 pwd = path.abspath(path.dirname(__file__))
-#chdir(pwd)
 dll_dir = path.abspath(path.join(pwd, 'DLLs'))
 print('Setting PYSDL2_DLL_PATH environment variable.')
 environ['PYSDL2_DLL_PATH'] = dll_dir
@@ -666,8 +665,6 @@ class CCoin(sdl2ext.Entity):
         borders = self.borders
         self.sprite.x = random.randrange(borders.minx, borders.maxx-self.sprite.size[0])
         self.sprite.y = random.randrange(borders.miny, borders.maxy-self.sprite.size[1])
-
-
 
 
 if __name__ == "__main__":
