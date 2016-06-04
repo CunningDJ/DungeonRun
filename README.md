@@ -17,4 +17,3 @@ Each player tries to collect as many points as possible while not getting killed
 - Run to the door to progress to the next level.
 - + (plus) and - (minus) on the keypad will accelerate and decelerate (respectively) the players and monsters.
 - The points and end game score can currently be seen in the window header.
-- The most recent code is in the top-level DungeonRun.py script, but stable versions with less features are in the version_release folders.
