@@ -1,27 +1,174 @@
+from os import path, environ, listdir
+pwd = path.dirname(__file__)
+dll_dir = path.abspath(path.join(pwd, 'DLLs'))
+print('dll dir: ' + dll_dir)
+environ['PYSDL2_DLL_PATH'] = dll_dir
+
 import sys
-import sdl2
-import sdl2.ext
+import lib.sdl2 as sdl2
+import lib.sdl2.ext as sdl2ext
 
 import random
 from math import sqrt
 import time
-import os
 
-BLACK = sdl2.ext.Color(0, 0, 0)
-WHITE = sdl2.ext.Color(255, 255, 255)
-RESOURCES = sdl2.ext.Resources(__file__, "resources")
-DOORS = sdl2.ext.Resources(__file__, "resources/doors")
 
-class SoftwareRenderSystem(sdl2.ext.SoftwareSpriteRenderSystem):
+BLACK = sdl2ext.Color(0, 0, 0)
+WHITE = sdl2ext.Color(255, 255, 255)
+RESOURCES = sdl2ext.Resources(__file__, "resources")
+DOORS = sdl2ext.Resources(__file__, "resources/doors")
+
+def run():
+
+    # TODO decide if this or other is best mechanism for choosing 2p
+    if "-2p" in sys.argv:
+        two_player = True
+    else:
+        two_player = False
+
+    sdl2ext.init()
+    borders = Borders(0, 0, 1400, 900)
+    window = sdl2ext.Window("DUNGEON RUN", size=(borders.maxx, borders.maxy))
+    window.show()
+
+    if "-hardware" in sys.argv:
+        print("Using hardware acceleration")
+        renderer = sdl2ext.Renderer(window)
+        factory = sdl2ext.SpriteFactory(sdl2ext.TEXTURE, renderer=renderer)
+    else:
+        print("Using software rendering")
+        factory = sdl2ext.SpriteFactory(sdl2ext.SOFTWARE)
+
+    # populating the list of door sprites
+    door_sprites = []
+    for file in listdir(path.join(pwd, 'resources','doors')):
+        door_sprites.append(factory.from_image(DOORS.get_path(file)))
+
+    p1_sprite = factory.from_image(RESOURCES.get_path("player1.png"))
+    p2_sprite = factory.from_image(RESOURCES.get_path("player2.png"))
+    monster_sprite = factory.from_image(RESOURCES.get_path("monster.png"))
+    door_sprite = factory.from_image(DOORS.get_path("door-generic.png"))
+
+    world = sdl2ext.World()
+
+    movement = MovementSystem(borders)
+    door_sys = DoorSystem(borders)
+    monster_ai = MonsterAI()
+    coin_sys = CoinSystem(80)
+
+    if factory.sprite_type == sdl2ext.SOFTWARE:
+        spriterenderer = SoftwareRenderSystem(window)
+    else:
+        spriterenderer = TextureRenderSystem(renderer)
+
+    world.add_system(movement)
+    world.add_system(spriterenderer)
+    world.add_system(door_sys)
+    world.add_system(monster_ai)
+    world.add_system(coin_sys)
+
+    monster = Monster(world, monster_sprite, borders, int(borders.maxx/2), int(borders.maxy/2), top_speed=5)
+
+    player1 = EPlayer(world, p1_sprite, 1, (sdl2.SDLK_UP, sdl2.SDLK_RIGHT, sdl2.SDLK_DOWN, sdl2.SDLK_LEFT), 0,
+                      int(borders.maxy-(2*p1_sprite.size[1])), speed=8)
+    player1 = player1.cplayer
+
+    if two_player:
+        player2 = EPlayer(world, p2_sprite, 2, (sdl2.SDLK_w, sdl2.SDLK_d,sdl2.SDLK_s,sdl2.SDLK_a), int(p1_sprite.size[0]),
+                          int(borders.maxy-p2_sprite.size[1]), speed=8)
+        player2 = player2.cplayer
+        players = [player1, player2]
+    else:
+        players = [player1, ]
+
+    door = Door(world, door_sprite, (30, 30))
+
+    timer = Timer()
+
+    coin_image = RESOURCES.get_path("coin.png")
+    for count in range(coin_sys.max_coins):
+        ECoin(world, factory.from_image(coin_image), borders)
+
+    coin_sys.borders = borders
+    coin_sys.world = world
+    coin_sys.coin_image = coin_image
+    coin_sys.players = players
+    coin_sys.factory = factory
+
+    door_sys.players = players
+    door_sys.monster = monster
+    door_sys.door = door
+    door_sys.coin_sys = coin_sys
+    door_sys.door_sprites = door_sprites
+
+    monster_ai.monster = monster
+    monster_ai.players = players
+    monster_ai.window = window
+    monster_ai.timer = timer
+
+    # Switches for accelerator and decelator key events (+ and - on keypad, respectively)
+    # Keeps the player from holding down the keys, must dial it up or down, one click at a time
+    accelerator_key_switch = True
+    decelerator_key_switch = True
+
+    running = True
+    timer.start()
+    while running:
+        for event in sdl2ext.get_events():
+            if event.type == sdl2.SDL_QUIT:
+                running = False
+                break
+
+            # Player movement processing
+            if event.type == sdl2.SDL_KEYDOWN or event.type == sdl2.SDL_KEYUP:
+                for player in players:
+                    player.process_event(event)
+
+            # Processing accelerator and decelerator events (+ and - on the keypad)
+            if event.type == sdl2.SDL_KEYDOWN:
+                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS and accelerator_key_switch:
+                    accelerator_key_switch = False
+                    temp_speed = 0
+                    for player in players:
+                        player.playerdata.speed += 1
+                        temp_speed = player.playerdata.speed
+                        print('player speed: {}'.format(player.playerdata.speed))
+                    monster.monsterdata.top_speed = int(round(5*temp_speed/8))
+                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS and decelerator_key_switch:
+                    decelerator_key_switch = False
+                    min_player_speed = 3
+                    temp_speed = min_player_speed
+                    for player in players:
+                        if player.playerdata.speed > min_player_speed:
+                            player.playerdata.speed -= 1
+                            temp_speed = player.playerdata.speed
+                    if monster.monsterdata.top_speed > 1:
+                        monster.monsterdata.top_speed = int(round(5*temp_speed/8))
+            elif  event.type == sdl2.SDL_KEYUP:
+                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS:
+                    accelerator_key_switch = True
+                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS:
+                    decelerator_key_switch = True
+
+        sdl2.SDL_Delay(5)
+
+        int_time = int(timer.get_time())
+        win_title = 'DUNGEON RUN {} '.format(int_time)
+        for player in players:
+            win_title += 'P{}: {} '.format(player.playerdata.player_num, player.playerdata.points)
+        window.title = win_title
+        world.process()
+
+class SoftwareRenderSystem(sdl2ext.SoftwareSpriteRenderSystem):
     def __init__(self, window):
         super(SoftwareRenderSystem, self).__init__(window)
 
     def render(self, components):
-        sdl2.ext.fill(self.surface, BLACK)
+        sdl2ext.fill(self.surface, BLACK)
         super(SoftwareRenderSystem, self).render(components)
 
 
-class TextureRenderSystem(sdl2.ext.TextureSpriteRenderSystem):
+class TextureRenderSystem(sdl2ext.TextureSpriteRenderSystem):
     def __init__(self, renderer):
         super(TextureRenderSystem, self).__init__(renderer)
         self.renderer = renderer
@@ -61,10 +208,10 @@ class Borders(object):
 
 # MovementSystem: System that draws on the current Velocity component information of each player and monster and moves
 # the appropriate unit distance accordingly
-class MovementSystem(sdl2.ext.Applicator):
+class MovementSystem(sdl2ext.Applicator):
     def __init__(self, borders):
         super(MovementSystem, self).__init__()
-        self.componenttypes = Velocity, sdl2.ext.Sprite
+        self.componenttypes = Velocity, sdl2ext.Sprite
         self.minx = borders.minx
         self.miny = borders.miny
         self.maxx = borders.maxx
@@ -91,10 +238,10 @@ class MovementSystem(sdl2.ext.Applicator):
 # DoorSystem: System for determining when players have "entered" a door, and what happens to the world when this occurs.
 # Namely, the coins are all moved and regenerated (calling on the attached CoinSystem), the door is moved, and the
 # monster is moved
-class DoorSystem(sdl2.ext.Applicator):
+class DoorSystem(sdl2ext.Applicator):
     def __init__(self, borders):
         super(DoorSystem, self).__init__()
-        self.componenttypes = (sdl2.ext.Sprite, PlayerData)
+        self.componenttypes = (sdl2ext.Sprite, PlayerData)
         self.players = None
         self.door = None
         self.borders = borders
@@ -159,7 +306,7 @@ class DoorSystem(sdl2.ext.Applicator):
 
 
 # Door: Entity representing the door.
-class Door(sdl2.ext.Entity):
+class Door(sdl2ext.Entity):
     def __init__(self, world, sprite, position):
         self.sprite = sprite
         self.sprite.position = position
@@ -175,7 +322,7 @@ class Velocity(object):
 
 # EPlayer: One of a dual Player Entity system.  This one acts as the Entity for the component CPlayer, allowing the
 # overall Player Entity system to be deleted by the World.delete() function
-class EPlayer(sdl2.ext.Entity):
+class EPlayer(sdl2ext.Entity):
     def __init__(self, world, sprite, player_num, move_keys, posx=0, posy=0, speed=8, ai=False):
         super(EPlayer, self).__init__()
         self.cplayer = CPlayer(world, self, sprite, player_num, move_keys, posx, posy, speed, ai)
@@ -183,7 +330,7 @@ class EPlayer(sdl2.ext.Entity):
 
 # CPlayer: One of a dual Player Entity system.  This one acts as a component for the EPlayer Entity, allowing it to be
 # called on and managed by the Systems and Applicators
-class CPlayer(sdl2.ext.Entity):
+class CPlayer(sdl2ext.Entity):
     def __init__(self, world, entity, sprite, player_num, move_keys, posx, posy, speed, ai):
         super(CPlayer, self).__init__()
         self.entity = entity
@@ -242,7 +389,7 @@ class PlayerData(object):
 
 # MonsterAI: System governing monster behavior in the world context.  Execution of different monster behaviors dictated
 #  by this system (e.g. patrol and advance) are detailed in the monster class functions.
-class MonsterAI(sdl2.ext.Applicator):
+class MonsterAI(sdl2ext.Applicator):
     def __init__(self):
         super(MonsterAI, self).__init__()
         self.componenttypes = (CPlayer,)
@@ -308,7 +455,7 @@ class MonsterAI(sdl2.ext.Applicator):
 # Monster Entity class.  Contains behavior (in the functions) and trait (in the sub-class MonsterData) information for
 #  each monster, including their patrol and advance algorithms, their velocity and sight range data,
 #  and their border limitations
-class Monster(sdl2.ext.Entity):
+class Monster(sdl2ext.Entity):
     def __init__(self, world, sprite, borders, posx=0, posy=0, top_speed=5, sight_range=300):
         self.sprite = sprite
         self.sprite.position = posx, posy
@@ -434,7 +581,7 @@ class MonsterData(object):
 
 # CoinSystem: System checking if a player has 'picked up' any coins, removing coins and awarding points to that player
 # if this has occurred and moving and regenerating coins if the door is activated
-class CoinSystem(sdl2.ext.Applicator):
+class CoinSystem(sdl2ext.Applicator):
     def __init__(self, max_coins):
         super(CoinSystem, self).__init__()
         self.componenttypes = (CCoin,)
@@ -477,7 +624,7 @@ class CoinSystem(sdl2.ext.Applicator):
 
 # ECoin: Half of the dual Coin Entity system.  The entity for the component CCoin, ECoin allows the player to delete the
 # Coin Entity system using the World.delete() function on it.
-class ECoin(sdl2.ext.Entity):
+class ECoin(sdl2ext.Entity):
     def __init__(self, world, sprite, borders):
         super(ECoin, self).__init__()
         self.ccoin = CCoin(world, self, sprite, borders)
@@ -485,7 +632,7 @@ class ECoin(sdl2.ext.Entity):
 
 # CCoin: Half of the dual Coin Entity system.  The component for the entity ECoin, CCoin allows the player to manage
 # the Coin as a component by the Systems and Applicators.
-class CCoin(sdl2.ext.Entity):
+class CCoin(sdl2ext.Entity):
     def __init__(self, world, entity, sprite, borders):
         super(CCoin, self).__init__()
         self.entity = entity
@@ -500,147 +647,6 @@ class CCoin(sdl2.ext.Entity):
         self.sprite.y = random.randrange(borders.miny, borders.maxy-self.sprite.size[1])
 
 
-def run():
-    sdl2.ext.init()
-    borders = Borders(0, 0, 1200, 800)
-    window = sdl2.ext.Window("DUNGEON RUN", size=(borders.maxx,borders.maxy))
-    window.show()
-
-    # TODO decide if this or other is best mechanism for choosing 2p
-    if "-2p" in sys.argv:
-        two_player = True
-    else:
-        two_player = False
-
-    # TODO decide 2p input (args above or other?)
-    two_player = True
-
-    if "-hardware" in sys.argv:
-        print("Using hardware acceleration")
-        renderer = sdl2.ext.Renderer(window)
-        factory = sdl2.ext.SpriteFactory(sdl2.ext.TEXTURE, renderer=renderer)
-    else:
-        print("Using software rendering")
-        factory = sdl2.ext.SpriteFactory(sdl2.ext.SOFTWARE)
-
-    # populating the list of door sprites
-    door_sprites = []
-    for file in os.listdir('{}/resources/doors'.format(os.getcwd())):
-        door_sprites.append(factory.from_image(DOORS.get_path(file)))
-
-    p1_sprite = factory.from_image(RESOURCES.get_path("player1.png"))
-    p2_sprite = factory.from_image(RESOURCES.get_path("player2.png"))
-    monster_sprite = factory.from_image(RESOURCES.get_path("monster.png"))
-    door_sprite = factory.from_image(DOORS.get_path("door-generic.png"))
-
-    world = sdl2.ext.World()
-
-    movement = MovementSystem(borders)
-    door_sys = DoorSystem(borders)
-    monster_ai = MonsterAI()
-    coin_sys = CoinSystem(30)
-
-    if factory.sprite_type == sdl2.ext.SOFTWARE:
-        spriterenderer = SoftwareRenderSystem(window)
-    else:
-        spriterenderer = TextureRenderSystem(renderer)
-
-    world.add_system(movement)
-    world.add_system(spriterenderer)
-    world.add_system(door_sys)
-    world.add_system(monster_ai)
-    world.add_system(coin_sys)
-
-    monster = Monster(world, monster_sprite, borders, int(borders.maxx/2), int(borders.maxy/2))
-
-    player1 = EPlayer(world, p1_sprite, 1, (sdl2.SDLK_UP, sdl2.SDLK_RIGHT, sdl2.SDLK_DOWN, sdl2.SDLK_LEFT), 0,
-                      int(borders.maxy-(2*p1_sprite.size[1])))
-    player1 = player1.cplayer
-
-    if two_player:
-        player2 = EPlayer(world, p2_sprite, 2, (sdl2.SDLK_w, sdl2.SDLK_d,sdl2.SDLK_s,sdl2.SDLK_a), int(p1_sprite.size[0]),
-                          int(borders.maxy-p2_sprite.size[1]))
-        player2 = player2.cplayer
-        players = [player1, player2]
-    else:
-        players = [player1, ]
-
-    door = Door(world, door_sprite, (30, 30))
-
-    timer = Timer()
-
-    coin_image = RESOURCES.get_path("coin.png")
-    for count in range(coin_sys.max_coins):
-        ECoin(world, factory.from_image(coin_image), borders)
-
-    coin_sys.borders = borders
-    coin_sys.world = world
-    coin_sys.coin_image = coin_image
-    coin_sys.players = players
-    coin_sys.factory = factory
-
-    door_sys.players = players
-    door_sys.monster = monster
-    door_sys.door = door
-    door_sys.coin_sys = coin_sys
-    door_sys.door_sprites = door_sprites
-
-    monster_ai.monster = monster
-    monster_ai.players = players
-    monster_ai.window = window
-    monster_ai.timer = timer
-
-    # Switches for accelerator and decelator key events (+ and - on keypad, respectively)
-    # Keeps the player from holding down the keys, must dial it up or down, one click at a time
-    accelerator_key_switch = True
-    decelerator_key_switch = True
-
-    running = True
-    timer.start()
-    while running:
-        for event in sdl2.ext.get_events():
-            if event.type == sdl2.SDL_QUIT:
-                running = False
-                break
-
-            # Player movement processing
-            if event.type == sdl2.SDL_KEYDOWN or event.type == sdl2.SDL_KEYUP:
-                for player in players:
-                    player.process_event(event)
-
-            # Processing accelerator and decelerator events (+ and - on the keypad)
-            if event.type == sdl2.SDL_KEYDOWN:
-                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS and accelerator_key_switch:
-                    accelerator_key_switch = False
-                    temp_speed = 0
-                    for player in players:
-                        player.playerdata.speed += 1
-                        temp_speed = player.playerdata.speed
-                    monster.monsterdata.top_speed = int(round(5*temp_speed/8))
-                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS and decelerator_key_switch:
-                    decelerator_key_switch = False
-                    min_player_speed = 3
-                    temp_speed = min_player_speed
-                    for player in players:
-                        if player.playerdata.speed > min_player_speed:
-                            player.playerdata.speed -= 1
-                            temp_speed = player.playerdata.speed
-                    if monster.monsterdata.top_speed > 1:
-                        monster.monsterdata.top_speed = int(round(5*temp_speed/8))
-            elif  event.type == sdl2.SDL_KEYUP:
-                if event.key.keysym.sym == sdl2.SDLK_KP_PLUS:
-                    accelerator_key_switch = True
-                elif event.key.keysym.sym == sdl2.SDLK_KP_MINUS:
-                    decelerator_key_switch = True
-
-        sdl2.SDL_Delay(10)
-
-        int_time = int(timer.get_time())
-        win_title = 'DUNGEON RUN {} '.format(int_time)
-        for player in players:
-            win_title += 'P{}: {} '.format(player.playerdata.player_num, player.playerdata.points)
-        window.title = win_title
-        world.process()
 
 
 if __name__ == "__main__":
