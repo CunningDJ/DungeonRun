@@ -3,7 +3,6 @@ DungeonRun
 
 Dungeon Run is a fast-paced, two-player game where you run around level upon level in a dungeon, collecting coins and avoiding restless monsters!
 Each player tries to collect as many points as possible while not getting killed.
-In its current version, you must install the Python and the PySDL2 library (linked below) first in order to play.
 
 # Steps to play
 
