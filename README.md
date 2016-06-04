@@ -7,7 +7,7 @@ In its current version, you must install the Python and the PySDL2 library (link
 
 # Steps to play
 
-1. Install Python 2 or 3 if you haven't: https://www.python.org/downloads/
+1. Install Python 2.7 or 3.x if you haven't: https://www.python.org/downloads/
 2. Pull this DungeonRun repository
 3. Run PLAY.cmd
 4. Enjoy!
